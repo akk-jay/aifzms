@@ -4,6 +4,8 @@ import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
 import { loadResume, saveResume, deleteResume } from "@/lib/storage";
 import QALibraryModal from "@/components/QALibraryModal";
+import { callDeepSeek } from "@/lib/deepseekService";
+import { extractResumeText } from "@/lib/resumeParser";
 
 export default function Home() {
   const [resumeName, setResumeName] = useState<string | null>(() => {
@@ -11,6 +13,8 @@ export default function Home() {
     return r?.fileName ?? null;
   });
   const [isQAModalOpen, setIsQAModalOpen] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,6 +62,64 @@ export default function Home() {
     toast("面试窗口功能将在后续版本中开放", "info");
   };
 
+  const handleAnalyzeResume = async () => {
+    const resume = loadResume();
+    if (!resume) {
+      toast("请先上传简历", "error");
+      return;
+    }
+
+    setAnalyzing(true);
+    setAnalysisResult(null);
+
+    try {
+      // Reconstruct the file from base64
+      const byteStr = atob(resume.data);
+      const bytes = new Uint8Array(byteStr.length);
+      for (let i = 0; i < byteStr.length; i++) {
+        bytes[i] = byteStr.charCodeAt(i);
+      }
+
+      const ext = resume.fileName.split(".").pop()?.toLowerCase() ?? "";
+      const mimeMap: Record<string, string> = {
+        pdf: "application/pdf",
+        doc: "application/msword",
+        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        txt: "text/plain",
+      };
+      const mimeType = mimeMap[ext] || "application/octet-stream";
+      const file = new File([bytes], resume.fileName, { type: mimeType });
+
+      const text = await extractResumeText(file);
+
+      if (!text || text.length < 10) {
+        toast("无法提取简历文本，请确保文件包含文字内容", "error");
+        setAnalyzing(false);
+        return;
+      }
+
+      const systemPrompt = `你是一位专业的简历分析专家。请根据以下简历内容，用中文进行简要分析：
+1. 候选人核心技能（3-5个关键词）
+2. 工作经验亮点
+3. 适合的岗位方向
+4. 面试建议（2-3条）
+请简洁回复，控制在 300 字以内。`;
+
+      const analysis = await callDeepSeek([
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `简历内容：\n${text.slice(0, 8000)}` },
+      ]);
+
+      setAnalysisResult(analysis);
+      toast("简历分析完成", "success");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "分析失败";
+      toast(msg, "error");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto p-8 space-y-8">
       <div>
@@ -70,32 +132,37 @@ export default function Home() {
         <h2 className="text-lg font-semibold text-gray-800 mb-4">📄 简历上传</h2>
 
         {resumeName ? (
-          <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">📎</span>
-              <div>
-                <p className="text-sm font-medium text-green-700">已上传简历</p>
-                <p className="text-xs text-green-600">{resumeName}</p>
+          <>
+            <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📎</span>
+                <div>
+                  <p className="text-sm font-medium text-green-700">已上传简历</p>
+                  <p className="text-xs text-green-600">{resumeName}</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                  重新上传
+                </Button>
+                <Button variant="outline" size="sm" className="text-red-500 border-red-200 hover:bg-red-50" onClick={handleDeleteResume}>
+                  删除
+                </Button>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                重新上传
+            <div className="mt-3 flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={handleAnalyzeResume} disabled={analyzing} className="text-primary border-primary">
+                {analyzing ? "🤖 AI 分析中..." : "🤖 AI 分析简历"}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-red-500 border-red-200 hover:bg-red-50"
-                onClick={handleDeleteResume}
-              >
-                删除
-              </Button>
+              {analysisResult && <p className="text-xs text-green-600">分析完成，结果见下方</p>}
             </div>
-          </div>
+            {analysisResult && (
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                <p className="text-xs font-medium text-blue-600 mb-2">📊 AI 分析结果：</p>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{analysisResult}</p>
+              </div>
+            )}
+          </>
         ) : (
           <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
             <div className="flex items-center justify-between">

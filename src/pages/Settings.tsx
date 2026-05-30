@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
 import { saveDeepSeekConfig, loadDeepSeekConfig, type DeepSeekConfigData } from "@/lib/storage";
+import { testDeepSeekConnection } from "@/lib/deepseekService";
 
 const defaultDeepSeek = {
   apiKey: "",
@@ -30,6 +31,7 @@ export default function Settings() {
   const [dsStatus, setDsStatus] = useState("");
   const [dsSaveTime, setDsSaveTime] = useState("");
   const [dsLoading, setDsLoading] = useState(false);
+  const [dsTesting, setDsTesting] = useState(false);
 
   useEffect(() => {
     const saved = loadDeepSeekConfig();
@@ -87,6 +89,23 @@ export default function Settings() {
 
   const handleSaveIflytek = () => {
     toast("讯飞配置功能将在后续完善", "info");
+  };
+
+  const handleTestConnection = async () => {
+    // Validate first
+    if (!dsApiKey.trim()) { toast("请先填写 API 密钥", "error"); return; }
+    if (!dsBaseUrl.trim()) { toast("请先填写 API 基础 URL", "error"); return; }
+
+    setDsTesting(true);
+    try {
+      const reply = await testDeepSeekConnection();
+      toast(`连接成功: ${reply}`, "success");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "连接失败";
+      toast(msg, "error");
+    } finally {
+      setDsTesting(false);
+    }
   };
 
   const handleClearIflytek = () => {
@@ -221,13 +240,20 @@ export default function Settings() {
               />
             </div>
 
-            <div className="pt-2">
+            <div className="pt-2 flex gap-3">
               <Button
                 onClick={handleSaveDeepSeek}
                 className="bg-primary hover:bg-primary-600"
-                disabled={dsLoading}
+                disabled={dsLoading || dsTesting}
               >
                 {dsLoading ? "保存中..." : "保存配置"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleTestConnection}
+                disabled={dsLoading || dsTesting}
+              >
+                {dsTesting ? "测试中..." : "测试连接"}
               </Button>
             </div>
 
