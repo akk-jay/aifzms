@@ -29,15 +29,8 @@ export class IflytekASR {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
-        // LLM endpoint: send start message
-        this.ws?.send(JSON.stringify({
-          msg_type: "start",
-          data: {
-            audio_encode: "pcm_s16le",
-            samplerate: 16000,
-            lang: "autodialect",
-          },
-        }));
+        // LLM endpoint: send start (audio params already in URL query string)
+        this.ws?.send(JSON.stringify({ msg_type: "start" }));
       };
 
       this.ws.onmessage = (event) => {
@@ -94,30 +87,20 @@ export class IflytekASR {
   sendAudio(audioData: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN && this.sessionStarted) {
       const bytes = new Uint8Array(audioData);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64 = btoa(binary);
 
       if (!this._firstAudioSent) {
-        console.log("[iFlytek] First audio frame:", bytes.length, "bytes PCM, base64 length:", base64.length);
+        console.log("[iFlytek] First audio frame (binary):", bytes.length, "bytes PCM s16le 16kHz");
         this._firstAudioSent = true;
       }
 
-      this.ws.send(JSON.stringify({
-        msg_type: "audio",
-        data: {
-          audio: base64,
-          audio_encode: "pcm_s16le",
-          samplerate: 16000,
-        },
-      }));
+      // Try sending raw PCM binary (many streaming ASR APIs expect this)
+      this.ws.send(bytes.buffer);
     }
   }
 
   sendEnd(): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
+      // Send end as JSON, not binary
       this.ws.send(JSON.stringify({ msg_type: "end" }));
       this.sessionStarted = false;
     }
