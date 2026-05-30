@@ -97,7 +97,9 @@ export function loadQALibrary(): QAItem[] {
 // ===== Interview Context =====
 export interface InterviewContext {
   resumeName: string | null;
+  resumeData: string | null;  // base64 encoded resume file
   qaCount: number;
+  qaItems: QAItem[];
   position: string;
   startedAt: string;
 }
@@ -108,5 +110,13 @@ export function saveInterviewContext(ctx: InterviewContext): void {
 
 export function loadInterviewContext(): InterviewContext | null {
   try { const raw = localStorage.getItem(KEYS.INTERVIEW_CONTEXT); if (raw) return JSON.parse(raw); } catch {}
+  return null;
+}
+
+export function loadFullInterviewContext(): InterviewContext | null {
+  try {
+    const raw = localStorage.getItem("interview_context_full");
+    if (raw) return JSON.parse(raw);
+  } catch {}
   return null;
 }

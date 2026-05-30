@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
 import { saveDeepSeekConfig, loadDeepSeekConfig, saveIflytekConfig, loadIflytekConfig, deleteIflytekConfig, type DeepSeekConfigData } from "@/lib/storage";
 import { testDeepSeekConnection } from "@/lib/deepseekService";
+import { testIflytekConnection } from "@/lib/iflytekService";
 
 const defaultDeepSeek = {
   apiKey: "",
@@ -24,6 +25,7 @@ export default function Settings() {
   const [iflytekStatus, setIflytekStatus] = useState("");
   const [iflytekSaveTime, setIflytekSaveTime] = useState("");
   const [iflytekLoading, setIflytekLoading] = useState(false);
+  const [iflytekTesting, setIflytekTesting] = useState(false);
 
   // DeepSeek state
   const [dsApiKey, setDsApiKey] = useState(defaultDeepSeek.apiKey);
@@ -142,6 +144,21 @@ export default function Settings() {
     toast("讯飞配置已清除", "info");
   };
 
+  const handleTestIflytek = async () => {
+    if (!iflytekAppId.trim()) { toast("请先填写应用 ID", "error"); return; }
+    if (!iflytekApiKey.trim()) { toast("请先填写 API 密钥", "error"); return; }
+    if (!iflytekApiSecret.trim()) { toast("请先填写 API Secret", "error"); return; }
+    setIflytekTesting(true);
+    try {
+      const msg = await testIflytekConnection({ appId: iflytekAppId.trim(), apiKey: iflytekApiKey.trim(), apiSecret: iflytekApiSecret.trim() });
+      toast(msg, "success");
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "连接失败", "error");
+    } finally {
+      setIflytekTesting(false);
+    }
+  };
+
   return (
     <div className="max-w-3xl mx-auto p-8">
       <div className="mb-6">
@@ -201,8 +218,11 @@ export default function Settings() {
               </div>
             </div>
             <div className="flex gap-3 pt-2">
-              <Button onClick={handleSaveIflytek} className="bg-primary hover:bg-primary-600" disabled={iflytekLoading}>
+              <Button onClick={handleSaveIflytek} className="bg-primary hover:bg-primary-600" disabled={iflytekLoading || iflytekTesting}>
                 {iflytekLoading ? "保存中..." : "保存配置"}
+              </Button>
+              <Button variant="outline" onClick={handleTestIflytek} disabled={iflytekLoading || iflytekTesting}>
+                {iflytekTesting ? "测试中..." : "测试连接"}
               </Button>
               <Button variant="outline" onClick={handleClearIflytek}>
                 清除配置

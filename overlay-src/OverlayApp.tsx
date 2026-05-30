@@ -5,11 +5,7 @@ import { IflytekASR } from "../src/lib/iflytek";
 import { DeepSeekClient } from "../src/lib/deepseek";
 
 function getConfig() {
-  try {
-    const raw = localStorage.getItem("app_config");
-    if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
-  return {
+  let config = {
     iflytek: { appId: "", apiKey: "", apiSecret: "" },
     deepseek: {
       apiKey: "sk-placeholder",
@@ -20,6 +16,39 @@ function getConfig() {
     },
     interview: { position: "前端", language: "TypeScript" },
   };
+  try {
+    const raw = localStorage.getItem("app_config");
+    if (raw) config = { ...config, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  // Load interview context (resume + QA library)
+  try {
+    const ctxRaw = localStorage.getItem("interview_context_full");
+    if (ctxRaw) {
+      const ctx = JSON.parse(ctxRaw);
+      (config as Record<string, unknown>).interviewContext = ctx;
+    }
+  } catch { /* ignore */ }
+  return config;
+}
+
+function buildInterviewPrompt(): string {
+  let extraContext = "";
+  try {
+    const ctxRaw = localStorage.getItem("interview_context_full");
+    if (ctxRaw) {
+      const ctx = JSON.parse(ctxRaw);
+      if (ctx.resumeName) {
+        extraContext += `\n应聘者已上传简历：${ctx.resumeName}`;
+      }
+      if (ctx.qaItems && ctx.qaItems.length > 0) {
+        extraContext += `\n自定义问答库（${ctx.qaCount}条）：`;
+        ctx.qaItems.forEach((qa: { question: string; answer: string }) => {
+          extraContext += `\n- Q: ${qa.question}\n  A: ${qa.answer}`;
+        });
+      }
+    }
+  } catch { /* ignore */ }
+  return extraContext;
 }
 
 export default function OverlayApp() {
@@ -90,11 +119,12 @@ export default function OverlayApp() {
 
     const config = getConfig();
     const dsClient = new DeepSeekClient(config.deepseek);
+    const interviewContext = buildInterviewPrompt();
 
     try {
       let answerText = "";
       await dsClient.generateAnswerStream(
-        question,
+        interviewContext ? `[面试者背景资料]\n${interviewContext}\n\n[当前问题]\n${question}` : question,
         (token) => {
           answerText += token;
           setCurrentAnswer(answerText);

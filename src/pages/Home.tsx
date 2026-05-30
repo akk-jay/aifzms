@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
 import { loadResume, saveResume, deleteResume, saveInterviewContext, loadQALibrary } from "@/lib/storage";
+import { startInterviewWindows } from "@/lib/commands";
 import QALibraryModal from "@/components/QALibraryModal";
 import { callDeepSeek } from "@/lib/deepseekService";
 import { extractResumeText } from "@/lib/resumeParser";
@@ -58,18 +59,29 @@ export default function Home() {
     toast("简历已删除", "info");
   };
 
-  const handleStartInterview = () => {
-    const qaItems = JSON.parse(localStorage.getItem("qa_library") || "[]");
-    saveInterviewContext({
-      resumeName: resumeName,
+  const handleStartInterview = async () => {
+    const qaItems = loadQALibrary();
+    const resume = loadResume();
+
+    // Save interview context for overlay/record windows
+    const context = {
+      resumeName: resume?.fileName ?? null,
+      resumeData: resume?.data ?? null,
       qaCount: qaItems.length,
+      qaItems: qaItems,
       position: "面试",
       startedAt: new Date().toISOString(),
-    });
-    toast(
-      `面试准备就绪！已加载简历${resumeName ? `「${resumeName}」` : "（未上传）"}和问答库（${qaItems.length} 条）。桌面窗口功能后续开放。`,
-      "success"
-    );
+    };
+    saveInterviewContext(context);
+    localStorage.setItem("interview_context_full", JSON.stringify(context));
+
+    // Try to launch Tauri overlay + record windows
+    try {
+      await startInterviewWindows();
+      toast(`面试已启动！简历${resumeName ? `「${resumeName}」` : "未上传"}，问答库 ${qaItems.length} 条`, "success");
+    } catch {
+      toast("面试窗口启动失败，请检查 Tauri 环境。数据已保存。", "error");
+    }
   };
 
   const handleAnalyzeResume = async () => {
