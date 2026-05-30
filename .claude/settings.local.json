@@ -51,7 +51,11 @@
       "Bash(powershell *)",
       "Bash(rm -f \"/c/Users/29542/Desktop/AI闈㈣瘯鍔╂墜.lnk\")",
       "Bash(rm -f \"/c/Users/29542/Desktop/AI面试助手.lnk\")",
-      "Bash(cmd.exe /c 'mklink /? >nul 2>&1 && echo ok')"
+      "Bash(cmd.exe /c 'mklink /? >nul 2>&1 && echo ok')",
+      "Bash(where node *)",
+      "Bash(where npm *)",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\29542\\\\Desktop\\\\aifzms && start.bat\")",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\29542\\\\Desktop\\\\aifzms\\\\start.bat\")"
     ]
   }
 }
