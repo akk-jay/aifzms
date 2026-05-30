@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicedoc/open-docs/master/schemas/tauri/tauri.conf.schema.json",
+  "productName": "AI面试助手",
+  "version": "0.1.0",
+  "identifier": "com.aifzms.interview-assistant",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "AI面试助手 - 配置",
+        "width": 900,
+        "height": 680,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "store": {}
+  }
+}
