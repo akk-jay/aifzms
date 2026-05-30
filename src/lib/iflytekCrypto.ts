@@ -19,8 +19,8 @@ export async function buildIflytekUrl(config: {
   const p = (n: number) => String(n).padStart(2, "0");
   const dateStr = `${days[now.getUTCDay()]}, ${p(now.getUTCDate())} ${months[now.getUTCMonth()]} ${now.getUTCFullYear()} ${p(now.getUTCHours())}:${p(now.getUTCMinutes())}:${p(now.getUTCSeconds())} GMT`;
 
-  // Signature origin string - includes appid
-  const signatureOrigin = `appid: ${config.appId}\nhost: ${host}\ndate: ${dateStr}\nGET /v1/ws HTTP/1.1`;
+  // Signature origin string (standard format per iFlytek docs)
+  const signatureOrigin = `host: ${host}\ndate: ${dateStr}\nGET /v1/ws HTTP/1.1`;
 
   // HMAC-SHA256
   const enc = new TextEncoder();
