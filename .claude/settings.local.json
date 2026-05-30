@@ -42,7 +42,9 @@
       "WebSearch",
       "WebFetch(domain:www.xfyun.cn)",
       "mcp__chrome-devtools__list_console_messages",
-      "mcp__chrome-devtools__evaluate_script"
+      "mcp__chrome-devtools__evaluate_script",
+      "WebFetch(domain:shandong.xfyun.cn)",
+      "WebFetch(domain:www.bookstack.cn)"
     ]
   }
 }
