@@ -30,9 +30,11 @@ export async function buildIflytekUrl(config: {
   const sigBytes = await crypto.subtle.sign("HMAC", cryptoKey, msgData);
   const signa = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
 
-  // Build URL with signa parameter (IMPORTANT: URL-encode the signa value)
+  // Build URL - ts in seconds, signa URL-encoded
   const ts = Math.floor(Date.now() / 1000);
-  const url = `wss://${host}/v1/ws?appid=${encodeURIComponent(config.appId)}&ts=${ts}&signa=${encodeURIComponent(signa)}&pd=general`;
+  // Manually encode base64 special chars without full URI encoding (keeps the rest intact)
+  const signaSafe = signa.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  const url = `wss://${host}/v1/ws?appid=${config.appId}&ts=${ts}&signa=${signaSafe}&pd=general`;
 
   return url;
 }
