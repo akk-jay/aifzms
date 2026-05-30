@@ -45,11 +45,22 @@ export class IflytekASR {
             return;
           }
 
-          // Result: transcription text
+          // Result: extract text from cn.st.rt[].ws[].cw[].w
           if (msg.msg_type === "result" && msg.data) {
-            const text = msg.data.text || msg.data.content || "";
-            const isFinal = msg.data.is_final !== false; // default to true
-            this.onResultCallback?.(text, isFinal);
+            const rt = msg.data?.cn?.st?.rt;
+            if (rt && Array.isArray(rt)) {
+              const words: string[] = [];
+              for (const r of rt) {
+                for (const ws of (r.ws || [])) {
+                  for (const cw of (ws.cw || [])) {
+                    if (cw.w) words.push(cw.w);
+                  }
+                }
+              }
+              const text = words.join("");
+              const isFinal = msg.data.ls === true;
+              if (text) this.onResultCallback?.(text, isFinal);
+            }
             return;
           }
 
