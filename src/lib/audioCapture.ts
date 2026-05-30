@@ -53,41 +53,58 @@ export class AudioCapture {
       console.warn("[Audio] Worklet failed, fallback to ScriptProcessor:", e);
     }
 
+    // Buffer to 20ms (640B) for low latency but acceptable frame size
+    const TARGET = 640;
+    const buffer: ArrayBuffer[] = [];
+    let buffered = 0;
     let sentCount = 0;
+
+    const flush = () => {
+      if (!this.onData || buffered === 0) return;
+      const merged = new Uint8Array(buffered);
+      let offset = 0;
+      for (const chunk of buffer) {
+        merged.set(new Uint8Array(chunk), offset);
+        offset += chunk.byteLength;
+      }
+      buffer.length = 0;
+      buffered = 0;
+      sentCount++;
+      if (sentCount % 25 === 0) console.log(`[Audio] Sent ${sentCount} frames (${merged.byteLength}B, 20ms)`);
+      this.onData(merged.buffer);
+    };
 
     if (this.audioCtx.audioWorklet && typeof AudioWorkletNode !== "undefined") {
       this.workletNode = new AudioWorkletNode(this.audioCtx, "pcm-proc");
       this.workletNode.port.onmessage = (e) => {
-        if (!this.onData) return;
-        this.onData(e.data.pcm); // Send immediately, no buffering
-        sentCount++;
-        if (sentCount % 25 === 0) {
-          console.log(`[Audio] Sent ${sentCount} chunks (${e.data.pcm.byteLength}B each, ~8ms latency)`);
-        }
+        buffer.push(e.data.pcm);
+        buffered += e.data.pcm.byteLength;
+        if (buffered >= TARGET) flush();
       };
       this.sourceNode.connect(this.workletNode);
     } else {
-      // Fallback: small ScriptProcessor chunks
-      const processor = this.audioCtx.createScriptProcessor(256, 1, 1);
+      const processor = this.audioCtx.createScriptProcessor(320, 1, 1);
       processor.onaudioprocess = (event) => {
-        if (!this.onData) return;
         const ch = event.inputBuffer.getChannelData(0);
         const pcm = new ArrayBuffer(ch.length * 2);
-        const view = new DataView(pcm);
+        const v = new DataView(pcm);
         for (let i = 0; i < ch.length; i++) {
           let s = Math.max(-1, Math.min(1, ch[i]));
-          view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+          v.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
         }
-        this.onData(pcm);
-        sentCount++;
-        if (sentCount % 50 === 0) console.log(`[Audio] Sent ${sentCount} chunks (${pcm.byteLength}B each)`);
+        buffer.push(pcm);
+        buffered += pcm.byteLength;
+        if (buffered >= TARGET) flush();
       };
       this.sourceNode.connect(processor);
       processor.connect(this.audioCtx.destination);
     }
 
+    // Safety net: flush every 20ms
+    const interval = window.setInterval(flush, 20);
+
     this._recording = true;
-    console.log("[Audio] Low-latency streaming started (~8ms chunks)");
+    console.log("[Audio] Streaming started (20ms/640B frames)");
   }
 
   onAudioData(callback: (buffer: ArrayBuffer) => void): void {
