@@ -23,8 +23,5 @@
     "security": {
       "csp": null
     }
-  },
-  "plugins": {
-    "store": {}
   }
 }

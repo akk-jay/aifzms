@@ -4,6 +4,7 @@ import Home from "@/pages/Home";
 import Settings from "@/pages/Settings";
 import Records from "@/pages/Records";
 import Help from "@/pages/Help";
+import { Toaster } from "@/components/ui/toast";
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
           <Route path="/help" element={<Help />} />
         </Routes>
       </Layout>
+      <Toaster />
     </HashRouter>
   );
 }
