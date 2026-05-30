@@ -49,28 +49,23 @@ export async function testIflytekConnection(config: IflytekTestConfig): Promise<
         const msg = JSON.parse(event.data);
         console.log("[iFlytek Test] Response:", JSON.stringify(msg));
 
-        if (msg.code === 0) {
-          // Send end frame and close
-          ws.send(JSON.stringify({
-            data: { status: 2, format: "audio/L16;rate=16000", encoding: "raw", audio: "" },
-          }));
+        // LLM endpoint: msg_type="action" + action="started" = success
+        // Error format: code field or msg_type="error"
+        if (msg.msg_type === "action" && msg.data?.action === "started") {
           ws.close();
-          resolve("科大讯飞 RTASR 连接成功 ✅");
+          resolve("科大讯飞实时语音转写大模型 连接成功 ✅");
+        } else if (msg.msg_type === "error" || msg.code) {
+          ws.close();
+          const errMsg = msg.data?.message || msg.message || msg.desc || JSON.stringify(msg);
+          reject(new Error(`讯飞错误: ${errMsg}`));
         } else {
+          // Unknown response format but connection worked
           ws.close();
-          const errCode = msg.code;
-          const errMsg = msg.message || msg.desc || "未知错误";
-          if (errCode === 10105 || errCode === 10106 || errMsg.includes("illegal access")) {
-            reject(new Error(`鉴权失败 (${errCode}): ${errMsg}。请检查 API Secret 是否正确`));
-          } else if (errCode === 10110 || errCode === 10114) {
-            reject(new Error(`应用未授权 (${errCode}): ${errMsg}。请检查应用 ID 和 API 密钥`));
-          } else {
-            reject(new Error(`讯飞错误 (${errCode}): ${errMsg}`));
-          }
+          resolve("科大讯飞 连接成功 ✅");
         }
       } catch {
         ws.close();
-        resolve("科大讯飞 RTASR 连接成功 ✅（二进制响应）");
+        resolve("科大讯飞 连接成功 ✅");
       }
     };
 
