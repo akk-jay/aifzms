@@ -12,10 +12,22 @@ function getFullConfig() {
     deepseek: { apiKey: "", baseUrl: "https://api.deepseek.com", model: "deepseek-chat", maxTokens: 2000, temperature: 0.7 },
     interview: { position: "项目管理", language: "TypeScript" },
   };
+  // Read config from URL hash (passed by Rust when creating window)
   try {
-    const raw = localStorage.getItem("app_config");
-    if (raw) config = { ...config, ...JSON.parse(raw) };
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+      const json = atob(hash.replace(/-/g, "+").replace(/_/g, "/"));
+      const parsed = JSON.parse(json);
+      config = { ...config, ...parsed };
+    }
   } catch { /* ignore */ }
+  // Fallback: localStorage (for browser testing)
+  if (!config.iflytek.apiKey) {
+    try {
+      const raw = localStorage.getItem("app_config");
+      if (raw) config = { ...config, ...JSON.parse(raw) };
+    } catch { /* ignore */ }
+  }
   return config;
 }
 

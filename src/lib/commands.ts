@@ -43,6 +43,6 @@ export async function loadRecords(): Promise<string> {
   return invoke("load_records");
 }
 
-export async function startInterviewWindows(): Promise<string> {
-  return invoke("start_interview_windows");
+export async function startInterviewWindows(configJson: string): Promise<string> {
+  return invoke("start_interview_windows", { configJson });
 }

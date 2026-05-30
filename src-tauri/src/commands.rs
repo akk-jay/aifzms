@@ -1,32 +1,36 @@
 use tauri::{AppHandle, WebviewWindowBuilder, WebviewUrl};
-use crate::store;
 
 #[tauri::command]
 pub async fn save_config(config_json: String) -> Result<String, String> {
-    store::save_config(&config_json).map_err(|e| e.to_string())?;
+    crate::store::save_config(&config_json).map_err(|e| e.to_string())?;
     Ok("ok".to_string())
 }
 
 #[tauri::command]
 pub async fn load_config() -> Result<String, String> {
-    store::load_config().map_err(|e| e.to_string())
+    crate::store::load_config().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn save_record(record_json: String) -> Result<String, String> {
-    store::save_record(&record_json).map_err(|e| e.to_string())?;
+    crate::store::save_record(&record_json).map_err(|e| e.to_string())?;
     Ok("ok".to_string())
 }
 
 #[tauri::command]
 pub async fn load_records() -> Result<String, String> {
-    store::load_records().map_err(|e| e.to_string())
+    crate::store::load_records().map_err(|e| e.to_string())
 }
 
+/// Start interview windows with config passed via URL hash
 #[tauri::command]
-pub async fn start_interview_windows(app: AppHandle) -> Result<String, String> {
-    // Create overlay window (semi-transparent, always on top)
-    let overlay = WebviewWindowBuilder::new(&app, "overlay", WebviewUrl::App("overlay.html".into()))
+pub async fn start_interview_windows(app: AppHandle, config_json: String) -> Result<String, String> {
+    // Base64-encode the config to pass in URL hash
+    let encoded = base64_encode(&config_json);
+
+    // Create overlay window
+    let overlay_url = format!("overlay.html#{}", encoded);
+    let overlay = WebviewWindowBuilder::new(&app, "overlay", WebviewUrl::App(overlay_url.into()))
         .title("面试辅助")
         .transparent(true)
         .decorations(false)
@@ -39,19 +43,18 @@ pub async fn start_interview_windows(app: AppHandle) -> Result<String, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    // Position overlay on the right side of screen
     if let Ok(Some(monitor)) = overlay.current_monitor() {
         let monitor_size = monitor.size();
         let window_size = overlay.outer_size().unwrap();
         let x = (monitor_size.width as i32 - window_size.width as i32) - 20;
         let y = 60i32;
         overlay.set_position(tauri::PhysicalPosition::new(x, y)).ok();
-    // Auto-open devtools on overlay to see console logs
-    overlay.open_devtools();
+        overlay.open_devtools();
     }
 
     // Create record window
-    let record = WebviewWindowBuilder::new(&app, "record", WebviewUrl::App("record.html".into()))
+    let record_url = format!("record.html#{}", encoded);
+    let record = WebviewWindowBuilder::new(&app, "record", WebviewUrl::App(record_url.into()))
         .title("面试记录")
         .transparent(false)
         .decorations(true)
@@ -62,7 +65,6 @@ pub async fn start_interview_windows(app: AppHandle) -> Result<String, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    // Position record window next to overlay
     if let Ok(Some(monitor)) = record.current_monitor() {
         let monitor_size = monitor.size();
         let window_size = record.outer_size().unwrap();
@@ -72,4 +74,9 @@ pub async fn start_interview_windows(app: AppHandle) -> Result<String, String> {
     }
 
     Ok("ok".to_string())
+}
+
+fn base64_encode(input: &str) -> String {
+    use base64::{Engine as _, engine::general_purpose};
+    general_purpose::URL_SAFE_NO_PAD.encode(input.as_bytes())
 }

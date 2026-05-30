@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
-import { loadResume, saveResume, deleteResume, saveInterviewContext, loadQALibrary } from "@/lib/storage";
+import { loadResume, saveResume, deleteResume, loadQALibrary } from "@/lib/storage";
 import { startInterviewWindows } from "@/lib/commands";
 import QALibraryModal from "@/components/QALibraryModal";
 import { callDeepSeek } from "@/lib/deepseekService";
@@ -63,24 +63,27 @@ export default function Home() {
     const qaItems = loadQALibrary();
     const resume = loadResume();
 
-    // Save interview context for overlay/record windows
-    const context = {
-      resumeName: resume?.fileName ?? null,
-      resumeData: resume?.data ?? null,
-      qaCount: qaItems.length,
-      qaItems: qaItems,
-      position: "面试",
-      startedAt: new Date().toISOString(),
+    // Build full config to pass to overlay/record windows
+    const iflytekCfg = JSON.parse(localStorage.getItem("iflytek_config") || "{}");
+    const deepseekCfg = JSON.parse(localStorage.getItem("deepseek_config") || "{}");
+    const interviewCtx = { resumeName: resume?.fileName ?? null, resumeData: resume?.data ?? null, qaCount: qaItems.length, qaItems, position: "面试", startedAt: new Date().toISOString() };
+    const fullConfig = {
+      iflytek: { appId: iflytekCfg.appId || "", apiKey: iflytekCfg.apiKey || "", apiSecret: iflytekCfg.apiSecret || "" },
+      deepseek: { apiKey: deepseekCfg.apiKey || "", baseUrl: deepseekCfg.baseUrl || "https://api.deepseek.com", model: deepseekCfg.model || "deepseek-chat", maxTokens: deepseekCfg.maxTokens || 2000, temperature: 0.7 },
+      interview: interviewCtx,
     };
-    saveInterviewContext(context);
-    localStorage.setItem("interview_context_full", JSON.stringify(context));
+    const configJson = JSON.stringify(fullConfig);
 
-    // Try to launch Tauri overlay + record windows
+    // Save locally for fallback
+    localStorage.setItem("app_config", configJson);
+    localStorage.setItem("interview_context_full", JSON.stringify(interviewCtx));
+
+    // Launch Tauri overlay + record windows with config
     try {
-      await startInterviewWindows();
+      await startInterviewWindows(configJson);
       toast(`面试已启动！简历${resumeName ? `「${resumeName}」` : "未上传"}，问答库 ${qaItems.length} 条`, "success");
     } catch {
-      toast("面试窗口启动失败，请检查 Tauri 环境。数据已保存。", "error");
+      toast("面试窗口启动失败。请确认在 Tauri 桌面环境中运行。", "error");
     }
   };
 
