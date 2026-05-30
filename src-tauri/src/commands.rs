@@ -32,6 +32,8 @@ pub async fn start_interview_windows(app: AppHandle) -> Result<String, String> {
         .decorations(false)
         .always_on_top(true)
         .resizable(true)
+        .focused(true)
+        .devtools(true)
         .inner_size(420.0, 320.0)
         .min_inner_size(300.0, 200.0)
         .build()
@@ -44,6 +46,8 @@ pub async fn start_interview_windows(app: AppHandle) -> Result<String, String> {
         let x = (monitor_size.width as i32 - window_size.width as i32) - 20;
         let y = 60i32;
         overlay.set_position(tauri::PhysicalPosition::new(x, y)).ok();
+    // Auto-open devtools on overlay to see console logs
+    overlay.open_devtools();
     }
 
     // Create record window
