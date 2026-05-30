@@ -1,3 +1,5 @@
+import { buildIflytekUrl } from "./iflytekCrypto";
+
 interface IflytekConfig {
   appId: string;
   apiKey: string;
@@ -14,11 +16,10 @@ export class IflytekASR {
     this.config = config;
   }
 
-  connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const hostUrl = "wss://rtasr.xfyun.cn/v1/ws";
-      const url = `${hostUrl}?appid=${this.config.appId}&ts=${Date.now()}&signa=&pd=general`;
+  async connect(): Promise<void> {
+    const url = await buildIflytekUrl(this.config);
 
+    return new Promise((resolve, reject) => {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {

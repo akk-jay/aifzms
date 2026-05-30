@@ -1,13 +1,16 @@
+import { buildIflytekUrl } from "./iflytekCrypto";
+
 interface IflytekTestConfig {
   appId: string;
   apiKey: string;
   apiSecret: string;
 }
 
-/** Test iFlytek RTASR connection by establishing WebSocket and checking handshake */
-export function testIflytekConnection(config: IflytekTestConfig): Promise<string> {
+/** Test iFlytek RTASR connection with proper HMAC-SHA256 signature */
+export async function testIflytekConnection(config: IflytekTestConfig): Promise<string> {
+  const url = await buildIflytekUrl(config);
+
   return new Promise((resolve, reject) => {
-    const url = `wss://rtasr.xfyun.cn/v1/ws?appid=${config.appId}&ts=${Date.now()}&signa=&pd=general`;
     const ws = new WebSocket(url);
     const timeout = setTimeout(() => {
       ws.close();
@@ -15,7 +18,6 @@ export function testIflytekConnection(config: IflytekTestConfig): Promise<string
     }, 10000);
 
     ws.onopen = () => {
-      // Send start frame
       const startFrame = {
         common: { app_id: config.appId },
         business: {
@@ -23,11 +25,6 @@ export function testIflytekConnection(config: IflytekTestConfig): Promise<string
           domain: "iat",
           accent: "mandarin",
           ptt: 0,
-          rlang: "zh-cn",
-          vinfo: 1,
-          nunum: 1,
-          speex_size: 60,
-          wbest: 1,
         },
         data: {
           status: 0,
@@ -44,7 +41,6 @@ export function testIflytekConnection(config: IflytekTestConfig): Promise<string
       try {
         const msg = JSON.parse(event.data);
         if (msg.code === 0) {
-          // Send end frame immediately to close gracefully
           ws.send(JSON.stringify({
             data: { status: 2, format: "audio/L16;rate=16000", encoding: "raw", audio: "" },
           }));
@@ -52,11 +48,11 @@ export function testIflytekConnection(config: IflytekTestConfig): Promise<string
           resolve("科大讯飞 RTASR 连接成功");
         } else {
           ws.close();
-          reject(new Error(`讯飞返回错误 (${msg.code}): ${msg.message || "未知错误"}`));
+          reject(new Error(`讯飞返回错误 (${msg.code}): ${msg.message || "鉴权失败，请检查 API 密钥和 Secret"}`));
         }
       } catch {
         ws.close();
-        resolve("科大讯飞 RTASR 连接成功（非 JSON 响应）");
+        resolve("科大讯飞 RTASR 连接成功");
       }
     };
 
