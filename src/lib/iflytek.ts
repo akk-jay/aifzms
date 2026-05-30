@@ -1,3 +1,7 @@
+/**
+ * iFlytek 实时语音转写大模型 (ASR LLM) WebSocket 客户端
+ * Endpoint: office-api-ast-dx.iflyaisol.com/ast/communicate/v1
+ */
 import { buildIflytekUrl } from "./iflytekCrypto";
 
 interface IflytekConfig {
@@ -11,6 +15,7 @@ export class IflytekASR {
   private config: IflytekConfig;
   private onResultCallback: ((text: string, isFinal: boolean) => void) | null = null;
   private onErrorCallback: ((error: string) => void) | null = null;
+  private sessionStarted = false;
 
   constructor(config: IflytekConfig) {
     this.config = config;
@@ -23,44 +28,55 @@ export class IflytekASR {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
-        const startFrame = {
-          common: { app_id: this.config.appId },
-          business: {
-            language: "zh_cn",
-            domain: "iat",
-            accent: "mandarin",
-            ptt: 0,
-            rlang: "zh-cn",
-            vinfo: 1,
-            nunum: 1,
-            speex_size: 60,
-            wbest: 1,
-          },
+        // LLM endpoint: send start message
+        this.ws?.send(JSON.stringify({
+          msg_type: "start",
           data: {
-            status: 0,
-            format: "audio/L16;rate=16000",
-            encoding: "raw",
-            audio: "",
+            audio_encode: "pcm_s16le",
+            samplerate: 16000,
+            lang: "autodialect",
           },
-        };
-        this.ws?.send(JSON.stringify(startFrame));
-        resolve();
+        }));
       };
 
       this.ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.code !== 0) {
+
+          // LLM endpoint: msg_type based
+          if (msg.msg_type === "action" && msg.data?.action === "started") {
+            this.sessionStarted = true;
+            resolve();
+            return;
+          }
+
+          // Result: transcription text
+          if (msg.msg_type === "result" && msg.data) {
+            const text = msg.data.text || msg.data.content || "";
+            const isFinal = msg.data.is_final !== false; // default to true
+            this.onResultCallback?.(text, isFinal);
+            return;
+          }
+
+          // Error
+          if (msg.msg_type === "error") {
+            const errMsg = msg.data?.message || msg.data?.desc || "ASR error";
+            this.onErrorCallback?.(errMsg);
+            return;
+          }
+
+          // Fallback for standard RTASR format
+          if (msg.code !== undefined && msg.code !== 0) {
             this.onErrorCallback?.(msg.message || "ASR error");
             return;
           }
-          if (msg.data?.result) {
-            const text = msg.data.result.text || "";
+          if (msg.data?.result?.text) {
+            const text = msg.data.result.text;
             const isFinal = msg.data.status === 2;
             this.onResultCallback?.(text, isFinal);
           }
         } catch {
-          // Ignore parse errors for binary frames
+          // Ignore binary frames
         }
       };
 
@@ -74,30 +90,30 @@ export class IflytekASR {
   }
 
   sendAudio(audioData: ArrayBuffer): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      const frame = {
+    if (this.ws?.readyState === WebSocket.OPEN && this.sessionStarted) {
+      // Convert ArrayBuffer to base64 for LLM endpoint
+      const bytes = new Uint8Array(audioData);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+
+      this.ws.send(JSON.stringify({
+        msg_type: "audio",
         data: {
-          status: 1,
-          format: "audio/L16;rate=16000",
-          encoding: "raw",
-          audio: arrayBufferToBase64(audioData),
+          audio: base64,
+          audio_encode: "pcm_s16le",
+          samplerate: 16000,
         },
-      };
-      this.ws.send(JSON.stringify(frame));
+      }));
     }
   }
 
   sendEnd(): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      const frame = {
-        data: {
-          status: 2,
-          format: "audio/L16;rate=16000",
-          encoding: "raw",
-          audio: "",
-        },
-      };
-      this.ws.send(JSON.stringify(frame));
+      this.ws.send(JSON.stringify({ msg_type: "end" }));
+      this.sessionStarted = false;
     }
   }
 
@@ -114,13 +130,4 @@ export class IflytekASR {
     this.ws?.close();
     this.ws = null;
   }
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
 }
