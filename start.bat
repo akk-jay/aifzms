@@ -1,7 +1,18 @@
 @echo off
-chcp 65001 >nul
-cd /d "C:\Users\29542\Desktop\aifzms"
-echo 🚀 启动 AI 面试助手...
+cd /d "%~dp0"
+
+echo Killing old processes...
+taskkill /f /im aifzms.exe >nul 2>&1
 npx kill-port 1420 >nul 2>&1
+
+echo.
+echo Starting AI Interview Assistant...
+echo.
+
 call npm run tauri dev
-pause
+
+if %errorlevel% neq 0 (
+    echo.
+    echo Startup failed! Check if Node.js and Rust are installed.
+    pause
+)

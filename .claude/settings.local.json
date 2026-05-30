@@ -48,7 +48,10 @@
       "mcp__chrome-devtools__select_page",
       "mcp__chrome-devtools__press_key",
       "mcp__chrome-devtools__handle_dialog",
-      "Bash(powershell *)"
+      "Bash(powershell *)",
+      "Bash(rm -f \"/c/Users/29542/Desktop/AI闈㈣瘯鍔╂墜.lnk\")",
+      "Bash(rm -f \"/c/Users/29542/Desktop/AI面试助手.lnk\")",
+      "Bash(cmd.exe /c 'mklink /? >nul 2>&1 && echo ok')"
     ]
   }
 }
