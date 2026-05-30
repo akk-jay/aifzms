@@ -1,6 +1,6 @@
 /**
  * Raw PCM audio capture — 16kHz, 16bit, mono
- * Output chunks: ~40ms (640 samples = 1280 bytes)
+ * Buffers small worklet chunks into 40ms frames for iFlytek
  */
 export class AudioCapture {
   private audioCtx: AudioContext | null = null;
@@ -10,46 +10,48 @@ export class AudioCapture {
   private onData: ((buf: ArrayBuffer) => void) | null = null;
   private _recording = false;
 
+  // Buffer to accumulate 40ms of audio (640 samples * 2 bytes = 1280 bytes)
+  private buffer: ArrayBuffer[] = [];
+  private bufferBytes = 0;
+  private readonly TARGET_BYTES = 1280; // 40ms @ 16kHz mono 16bit
+  private flushInterval: number | null = null;
+
   async start(): Promise<void> {
     console.log("[Audio] Requesting microphone...");
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
+        audio: { channelCount: 1, sampleRate: { ideal: 16000 }, echoCancellation: true, noiseSuppression: true },
       });
     } catch (e: unknown) {
       const err = e as DOMException;
-      console.error("[Audio] getUserMedia failed:", err.name, err.message);
-      if (err.name === "NotAllowedError") throw new Error("麦克风权限被拒绝，请在系统设置中允许");
-      if (err.name === "NotFoundError") throw new Error("未检测到麦克风设备");
+      if (err.name === "NotAllowedError") throw new Error("麦克风权限被拒绝");
+      if (err.name === "NotFoundError") throw new Error("未检测到麦克风");
       throw new Error(`麦克风启动失败: ${err.message}`);
     }
 
-    const actualSampleRate = this.stream.getAudioTracks()[0]?.getSettings()?.sampleRate;
-    console.log(`[Audio] Mic opened. Sample rate: ${actualSampleRate}Hz, channels: ${this.stream.getAudioTracks()[0]?.getSettings()?.channelCount}`);
+    const actualRate = this.stream.getAudioTracks()[0]?.getSettings()?.sampleRate;
+    console.log(`[Audio] Mic opened. Rate: ${actualRate}Hz → AudioContext resamples to 16000Hz`);
 
     this.audioCtx = new AudioContext({ sampleRate: 16000 });
     this.sourceNode = this.audioCtx.createMediaStreamSource(this.stream);
 
-    // Use inline AudioWorklet for reliable PCM capture
+    // Inline AudioWorklet: float32 → int16 PCM
     const workletCode = `
       class PcmProcessor extends AudioWorkletProcessor {
         process(inputs) {
-          const input = inputs[0];
-          if (!input || !input[0]) return true;
-          const channel = input[0]; // Float32Array, mono
-          // Convert to Int16 PCM
-          const pcm = new ArrayBuffer(channel.length * 2);
-          const view = new DataView(pcm);
-          for (let i = 0; i < channel.length; i++) {
-            let s = Math.max(-1, Math.min(1, channel[i]));
-            s = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            view.setInt16(i * 2, s, true);
+          const ch = inputs[0]?.[0];
+          if (!ch) return true;
+          const buf = new ArrayBuffer(ch.length * 2);
+          const v = new DataView(buf);
+          for (let i = 0; i < ch.length; i++) {
+            let s = Math.max(-1, Math.min(1, ch[i]));
+            v.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
           }
-          this.port.postMessage({ pcm }, [pcm]);
+          this.port.postMessage({ pcm: buf }, [buf]);
           return true;
         }
       }
-      registerProcessor('pcm-processor', PcmProcessor);
+      registerProcessor('pcm-proc', PcmProcessor);
     `;
 
     try {
@@ -58,44 +60,67 @@ export class AudioCapture {
       await this.audioCtx.audioWorklet.addModule(url);
       URL.revokeObjectURL(url);
     } catch (e) {
-      console.warn("[Audio] Worklet failed, falling back to ScriptProcessor:", e);
+      console.warn("[Audio] Worklet failed:", e);
+      // Fallback to ScriptProcessor
     }
 
-    const bufferSize = 640; // 40ms @ 16kHz
+    this.buffer = [];
+    this.bufferBytes = 0;
     let chunkCount = 0;
 
+    const flushBuffer = () => {
+      if (this.buffer.length === 0 || !this.onData) return;
+      // Merge all buffered chunks into one ArrayBuffer
+      const total = new Uint8Array(this.bufferBytes);
+      let offset = 0;
+      for (const chunk of this.buffer) {
+        total.set(new Uint8Array(chunk), offset);
+        offset += chunk.byteLength;
+      }
+      this.buffer = [];
+      this.bufferBytes = 0;
+      chunkCount++;
+      if (chunkCount % 25 === 0) console.log(`[Audio] Flushed ${chunkCount} frames (${total.byteLength}B each)`);
+      this.onData(total.buffer);
+    };
+
     if (this.audioCtx.audioWorklet && typeof AudioWorkletNode !== "undefined") {
-      this.workletNode = new AudioWorkletNode(this.audioCtx, "pcm-processor");
+      this.workletNode = new AudioWorkletNode(this.audioCtx, "pcm-proc");
       this.workletNode.port.onmessage = (e) => {
         if (!this.onData) return;
-        chunkCount++;
-        if (chunkCount % 10 === 0) console.log(`[Audio] Sent ${chunkCount} chunks`);
-        this.onData(e.data.pcm);
+        this.buffer.push(e.data.pcm);
+        this.bufferBytes += e.data.pcm.byteLength;
+        // Flush when we have enough (1280 bytes = 40ms)
+        if (this.bufferBytes >= this.TARGET_BYTES) flushBuffer();
       };
       this.sourceNode.connect(this.workletNode);
     } else {
-      // Fallback
-      const processor = this.audioCtx.createScriptProcessor(bufferSize, 1, 1);
+      // Fallback: ScriptProcessor with 40ms buffer
+      const processor = this.audioCtx.createScriptProcessor(640, 1, 1);
       processor.onaudioprocess = (event) => {
         if (!this.onData) return;
-        const inputData = event.inputBuffer.getChannelData(0);
-        const pcm = new ArrayBuffer(inputData.length * 2);
+        const ch = event.inputBuffer.getChannelData(0);
+        const pcm = new ArrayBuffer(ch.length * 2);
         const view = new DataView(pcm);
-        for (let i = 0; i < inputData.length; i++) {
-          let s = Math.max(-1, Math.min(1, inputData[i]));
-          s = s < 0 ? s * 0x8000 : s * 0x7FFF;
-          view.setInt16(i * 2, s, true);
+        for (let i = 0; i < ch.length; i++) {
+          let s = Math.max(-1, Math.min(1, ch[i]));
+          view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
         }
         chunkCount++;
-        if (chunkCount % 10 === 0) console.log(`[Audio] Sent ${chunkCount} chunks`);
+        if (chunkCount % 25 === 0) console.log(`[Audio] Sent ${chunkCount} frames (${pcm.byteLength}B each)`);
         this.onData(pcm);
       };
       this.sourceNode.connect(processor);
       processor.connect(this.audioCtx.destination);
     }
 
+    // Also flush every 40ms as safety net
+    this.flushInterval = window.setInterval(() => {
+      if (this.bufferBytes > 0) flushBuffer();
+    }, 40);
+
     this._recording = true;
-    console.log("[Audio] Capture started successfully");
+    console.log("[Audio] Capture started, target: 1280B/40ms frames");
   }
 
   onAudioData(callback: (buffer: ArrayBuffer) => void): void {
@@ -105,19 +130,15 @@ export class AudioCapture {
   stop(): void {
     console.log("[Audio] Stopping...");
     this._recording = false;
+    if (this.flushInterval) clearInterval(this.flushInterval);
     try { this.workletNode?.port?.close(); } catch {}
     try { this.workletNode?.disconnect(); } catch {}
     try { this.sourceNode?.disconnect(); } catch {}
     try { this.stream?.getTracks().forEach((t) => t.stop()); } catch {}
     try { this.audioCtx?.close(); } catch {}
-    this.stream = null;
-    this.audioCtx = null;
-    this.sourceNode = null;
-    this.workletNode = null;
+    this.stream = null; this.audioCtx = null; this.sourceNode = null; this.workletNode = null;
     console.log("[Audio] Stopped");
   }
 
-  isRecording(): boolean {
-    return this._recording;
-  }
+  isRecording(): boolean { return this._recording; }
 }
