@@ -55,7 +55,8 @@
       "Bash(where node *)",
       "Bash(where npm *)",
       "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\29542\\\\Desktop\\\\aifzms && start.bat\")",
-      "Bash(cmd.exe /c \"C:\\\\Users\\\\29542\\\\Desktop\\\\aifzms\\\\start.bat\")"
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\29542\\\\Desktop\\\\aifzms\\\\start.bat\")",
+      "Bash(cmd.exe *)"
     ]
   }
 }
