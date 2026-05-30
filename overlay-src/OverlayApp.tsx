@@ -76,11 +76,10 @@ export default function OverlayApp() {
     audioRef.current = audio;
     asrRef.current = asr;
 
-    asr.onResult((text, isFinal) => {
-      if (isFinal) {
-        transcriptRef.current += text;
-      }
-      setPartialTranscript(transcriptRef.current + text);
+    asr.onResult((text) => {
+      // Always update transcript with latest text (each seg_id has cumulative text)
+      transcriptRef.current = text;
+      setPartialTranscript(text);
     });
 
     asr.onError((err) => {
