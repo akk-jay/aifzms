@@ -16,6 +16,7 @@ export class IflytekASR {
   private onResultCallback: ((text: string, isFinal: boolean) => void) | null = null;
   private onErrorCallback: ((error: string) => void) | null = null;
   private sessionStarted = false;
+  private _firstAudioSent = false;
 
   constructor(config: IflytekConfig) {
     this.config = config;
@@ -42,6 +43,7 @@ export class IflytekASR {
       this.ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+          console.log("[iFlytek] Received:", JSON.stringify(msg).slice(0, 200));
 
           // LLM endpoint: msg_type based
           if (msg.msg_type === "action" && msg.data?.action === "started") {
@@ -91,13 +93,17 @@ export class IflytekASR {
 
   sendAudio(audioData: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN && this.sessionStarted) {
-      // Convert ArrayBuffer to base64 for LLM endpoint
       const bytes = new Uint8Array(audioData);
       let binary = "";
       for (let i = 0; i < bytes.byteLength; i++) {
         binary += String.fromCharCode(bytes[i]);
       }
       const base64 = btoa(binary);
+
+      if (!this._firstAudioSent) {
+        console.log("[iFlytek] First audio frame:", bytes.length, "bytes PCM, base64 length:", base64.length);
+        this._firstAudioSent = true;
+      }
 
       this.ws.send(JSON.stringify({
         msg_type: "audio",
