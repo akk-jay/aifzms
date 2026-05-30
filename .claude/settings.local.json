@@ -47,7 +47,8 @@
       "WebFetch(domain:www.bookstack.cn)",
       "mcp__chrome-devtools__select_page",
       "mcp__chrome-devtools__press_key",
-      "mcp__chrome-devtools__handle_dialog"
+      "mcp__chrome-devtools__handle_dialog",
+      "Bash(powershell *)"
     ]
   }
 }
