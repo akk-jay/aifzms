@@ -123,11 +123,13 @@ export default function OverlayApp() {
     setState("generating");
 
     const config = getFullConfig();
+    console.log("[Overlay] Config loaded:", { hasDsKey: !!config.deepseek?.apiKey, dsBaseUrl: config.deepseek?.baseUrl, hasIflytek: !!config.iflytek?.apiKey });
     const dsClient = new DeepSeekClient(config.deepseek);
     const interviewCtx = buildInterviewContext();
     const prompt = interviewCtx
       ? `[面试者背景资料]\n${interviewCtx}\n\n[当前问题]\n${question}`
       : question;
+    console.log("[Overlay] Prompt length:", prompt.length, "hasContext:", !!interviewCtx);
 
     try {
       let answerText = "";
@@ -144,7 +146,7 @@ export default function OverlayApp() {
       addToHistory({ question, answer: answerText, timestamp: new Date().toISOString() });
     } catch (err) {
       console.error("[Overlay] Generate failed:", err);
-      setCurrentAnswer("生成失败，请检查 DeepSeek 配置");
+      setCurrentAnswer("生成失败: " + (err instanceof Error ? err.message : String(err)));
       setState("displaying");
     }
   }, [setState, setCurrentQuestion, setCurrentAnswer, setPartialTranscript, addToHistory]);
