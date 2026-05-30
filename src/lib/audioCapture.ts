@@ -66,39 +66,61 @@ export class AudioCapture {
 
     this.buffer = [];
     this.bufferBytes = 0;
-    let chunkCount = 0;
+    let frameCount = 0;
 
-    const flushBuffer = () => {
-      if (this.buffer.length === 0 || !this.onData) return;
-      // Merge all buffered chunks into one ArrayBuffer
-      const total = new Uint8Array(this.bufferBytes);
-      let offset = 0;
-      for (const chunk of this.buffer) {
-        total.set(new Uint8Array(chunk), offset);
-        offset += chunk.byteLength;
+    const sendExactFrame = () => {
+      if (!this.onData) return;
+      const targetSize = this.TARGET_BYTES;
+      let frame: ArrayBuffer;
+
+      if (this.bufferBytes >= targetSize) {
+        // Merge buffer up to exactly targetSize
+        const data = new Uint8Array(targetSize);
+        let copied = 0;
+        while (copied < targetSize && this.buffer.length > 0) {
+          const chunk = this.buffer[0];
+          const remaining = targetSize - copied;
+          if (chunk.byteLength <= remaining) {
+            data.set(new Uint8Array(chunk), copied);
+            copied += chunk.byteLength;
+            this.buffer.shift();
+          } else {
+            data.set(new Uint8Array(chunk.slice(0, remaining)), copied);
+            this.buffer[0] = chunk.slice(remaining);
+            copied = targetSize;
+          }
+        }
+        this.bufferBytes -= targetSize;
+        frame = data.buffer;
+      } else {
+        // Pad with silence (zeros)
+        const data = new Uint8Array(targetSize);
+        if (this.bufferBytes > 0) {
+          let offset = 0;
+          for (const chunk of this.buffer) {
+            data.set(new Uint8Array(chunk), offset);
+            offset += chunk.byteLength;
+          }
+          this.buffer = [];
+          this.bufferBytes = 0;
+        }
+        frame = data.buffer;
       }
-      this.buffer = [];
-      this.bufferBytes = 0;
-      chunkCount++;
-      if (chunkCount % 25 === 0) console.log(`[Audio] Flushed ${chunkCount} frames (${total.byteLength}B each)`);
-      this.onData(total.buffer);
+      frameCount++;
+      if (frameCount % 25 === 0) console.log(`[Audio] Sent ${frameCount} frames (${frame.byteLength}B)`);
+      this.onData(frame);
     };
 
     if (this.audioCtx.audioWorklet && typeof AudioWorkletNode !== "undefined") {
       this.workletNode = new AudioWorkletNode(this.audioCtx, "pcm-proc");
       this.workletNode.port.onmessage = (e) => {
-        if (!this.onData) return;
         this.buffer.push(e.data.pcm);
         this.bufferBytes += e.data.pcm.byteLength;
-        // Flush when we have enough (1280 bytes = 40ms)
-        if (this.bufferBytes >= this.TARGET_BYTES) flushBuffer();
       };
       this.sourceNode.connect(this.workletNode);
     } else {
-      // Fallback: ScriptProcessor with 40ms buffer
       const processor = this.audioCtx.createScriptProcessor(640, 1, 1);
       processor.onaudioprocess = (event) => {
-        if (!this.onData) return;
         const ch = event.inputBuffer.getChannelData(0);
         const pcm = new ArrayBuffer(ch.length * 2);
         const view = new DataView(pcm);
@@ -106,18 +128,15 @@ export class AudioCapture {
           let s = Math.max(-1, Math.min(1, ch[i]));
           view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
         }
-        chunkCount++;
-        if (chunkCount % 25 === 0) console.log(`[Audio] Sent ${chunkCount} frames (${pcm.byteLength}B each)`);
-        this.onData(pcm);
+        this.buffer.push(pcm);
+        this.bufferBytes += pcm.byteLength;
       };
       this.sourceNode.connect(processor);
       processor.connect(this.audioCtx.destination);
     }
 
-    // Also flush every 40ms as safety net
-    this.flushInterval = window.setInterval(() => {
-      if (this.bufferBytes > 0) flushBuffer();
-    }, 40);
+    // Send exactly 1280 bytes every 40ms = 40ms of audio at 16kHz mono 16bit
+    this.flushInterval = window.setInterval(sendExactFrame, 40);
 
     this._recording = true;
     console.log("[Audio] Capture started, target: 1280B/40ms frames");
