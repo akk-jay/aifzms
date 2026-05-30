@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
-import { loadResume, saveResume, deleteResume } from "@/lib/storage";
+import { loadResume, saveResume, deleteResume, saveInterviewContext, loadQALibrary } from "@/lib/storage";
 import QALibraryModal from "@/components/QALibraryModal";
 import { callDeepSeek } from "@/lib/deepseekService";
 import { extractResumeText } from "@/lib/resumeParser";
@@ -59,7 +59,17 @@ export default function Home() {
   };
 
   const handleStartInterview = () => {
-    toast("面试窗口功能将在后续版本中开放", "info");
+    const qaItems = JSON.parse(localStorage.getItem("qa_library") || "[]");
+    saveInterviewContext({
+      resumeName: resumeName,
+      qaCount: qaItems.length,
+      position: "面试",
+      startedAt: new Date().toISOString(),
+    });
+    toast(
+      `面试准备就绪！已加载简历${resumeName ? `「${resumeName}」` : "（未上传）"}和问答库（${qaItems.length} 条）。桌面窗口功能后续开放。`,
+      "success"
+    );
   };
 
   const handleAnalyzeResume = async () => {

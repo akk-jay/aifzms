@@ -1,8 +1,10 @@
 const KEYS = {
   DEEPSEEK_CONFIG: "deepseek_config",
+  IFLYTEK_CONFIG: "iflytek_config",
   RESUME: "resume_data",
   RESUME_NAME: "resume_name",
   QA_LIBRARY: "qa_library",
+  INTERVIEW_CONTEXT: "interview_context",
 } as const;
 
 // ===== DeepSeek Config =====
@@ -15,26 +17,42 @@ export interface DeepSeekConfigData {
 }
 
 export function saveDeepSeekConfig(config: Omit<DeepSeekConfigData, "savedAt">): DeepSeekConfigData {
-  const data: DeepSeekConfigData = {
-    ...config,
-    savedAt: new Date().toISOString(),
-  };
+  const data: DeepSeekConfigData = { ...config, savedAt: new Date().toISOString() };
   localStorage.setItem(KEYS.DEEPSEEK_CONFIG, JSON.stringify(data));
   return data;
 }
 
 export function loadDeepSeekConfig(): DeepSeekConfigData | null {
-  try {
-    const raw = localStorage.getItem(KEYS.DEEPSEEK_CONFIG);
-    if (raw) return JSON.parse(raw);
-  } catch {}
+  try { const raw = localStorage.getItem(KEYS.DEEPSEEK_CONFIG); if (raw) return JSON.parse(raw); } catch {}
   return null;
+}
+
+// ===== iFlytek Config =====
+export interface IflytekConfigData {
+  appId: string;
+  apiKey: string;
+  apiSecret: string;
+  savedAt: string;
+}
+
+export function saveIflytekConfig(config: Omit<IflytekConfigData, "savedAt">): IflytekConfigData {
+  const data: IflytekConfigData = { ...config, savedAt: new Date().toISOString() };
+  localStorage.setItem(KEYS.IFLYTEK_CONFIG, JSON.stringify(data));
+  return data;
+}
+
+export function loadIflytekConfig(): IflytekConfigData | null {
+  try { const raw = localStorage.getItem(KEYS.IFLYTEK_CONFIG); if (raw) return JSON.parse(raw); } catch {}
+  return null;
+}
+
+export function deleteIflytekConfig(): void {
+  localStorage.removeItem(KEYS.IFLYTEK_CONFIG);
 }
 
 // ===== Resume =====
 export function saveResume(fileName: string, base64Data: string): void {
   localStorage.setItem(KEYS.RESUME_NAME, fileName);
-  // Store in chunks for large files
   const chunkSize = 50000;
   const chunks: string[] = [];
   for (let i = 0; i < base64Data.length; i += chunkSize) {
@@ -72,9 +90,23 @@ export function saveQALibrary(items: QAItem[]): void {
 }
 
 export function loadQALibrary(): QAItem[] {
-  try {
-    const raw = localStorage.getItem(KEYS.QA_LIBRARY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
+  try { const raw = localStorage.getItem(KEYS.QA_LIBRARY); if (raw) return JSON.parse(raw); } catch {}
   return [];
+}
+
+// ===== Interview Context =====
+export interface InterviewContext {
+  resumeName: string | null;
+  qaCount: number;
+  position: string;
+  startedAt: string;
+}
+
+export function saveInterviewContext(ctx: InterviewContext): void {
+  localStorage.setItem(KEYS.INTERVIEW_CONTEXT, JSON.stringify(ctx));
+}
+
+export function loadInterviewContext(): InterviewContext | null {
+  try { const raw = localStorage.getItem(KEYS.INTERVIEW_CONTEXT); if (raw) return JSON.parse(raw); } catch {}
+  return null;
 }

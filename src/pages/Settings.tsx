@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
-import { saveDeepSeekConfig, loadDeepSeekConfig, type DeepSeekConfigData } from "@/lib/storage";
+import { saveDeepSeekConfig, loadDeepSeekConfig, saveIflytekConfig, loadIflytekConfig, deleteIflytekConfig, type DeepSeekConfigData } from "@/lib/storage";
 import { testDeepSeekConnection } from "@/lib/deepseekService";
 
 const defaultDeepSeek = {
@@ -16,11 +16,14 @@ const defaultDeepSeek = {
 };
 
 export default function Settings() {
-  // iFlytek state (kept simple, not the focus of this revision)
-  const [iflytekAppId, setIflytekAppId] = useState("");
+  // iFlytek state
+  const [iflytekAppId, setIflytekAppId] = useState("ccd6f814");
   const [iflytekApiKey, setIflytekApiKey] = useState("");
   const [iflytekApiSecret, setIflytekApiSecret] = useState("");
   const [showIflytekKey, setShowIflytekKey] = useState(false);
+  const [iflytekStatus, setIflytekStatus] = useState("");
+  const [iflytekSaveTime, setIflytekSaveTime] = useState("");
+  const [iflytekLoading, setIflytekLoading] = useState(false);
 
   // DeepSeek state
   const [dsApiKey, setDsApiKey] = useState(defaultDeepSeek.apiKey);
@@ -42,6 +45,14 @@ export default function Settings() {
       setDsMaxTokens(saved.maxTokens || defaultDeepSeek.maxTokens);
       setDsStatus("✅ 已配置");
       setDsSaveTime(formatTime(saved.savedAt));
+    }
+    const iflytekSaved = loadIflytekConfig();
+    if (iflytekSaved) {
+      setIflytekAppId(iflytekSaved.appId);
+      setIflytekApiKey(iflytekSaved.apiKey);
+      setIflytekApiSecret(iflytekSaved.apiSecret);
+      setIflytekStatus("✅ 已配置");
+      setIflytekSaveTime(formatTime(iflytekSaved.savedAt));
     }
   }, []);
 
@@ -88,7 +99,20 @@ export default function Settings() {
   };
 
   const handleSaveIflytek = () => {
-    toast("讯飞配置功能将在后续完善", "info");
+    if (!iflytekAppId.trim()) { toast("应用 ID 不能为空", "error"); return; }
+    if (!iflytekApiKey.trim()) { toast("API 密钥不能为空", "error"); return; }
+    if (!iflytekApiSecret.trim()) { toast("API Secret 不能为空", "error"); return; }
+    setIflytekLoading(true);
+    try {
+      const saved = saveIflytekConfig({ appId: iflytekAppId.trim(), apiKey: iflytekApiKey.trim(), apiSecret: iflytekApiSecret.trim() });
+      setIflytekStatus("✅ 已配置");
+      setIflytekSaveTime(formatTime(saved.savedAt));
+      toast("科大讯飞配置保存成功", "success");
+    } catch {
+      toast("保存失败，请重试", "error");
+    } finally {
+      setIflytekLoading(false);
+    }
   };
 
   const handleTestConnection = async () => {
@@ -109,9 +133,12 @@ export default function Settings() {
   };
 
   const handleClearIflytek = () => {
+    deleteIflytekConfig();
     setIflytekAppId("");
     setIflytekApiKey("");
     setIflytekApiSecret("");
+    setIflytekStatus("");
+    setIflytekSaveTime("");
     toast("讯飞配置已清除", "info");
   };
 
@@ -174,13 +201,21 @@ export default function Settings() {
               </div>
             </div>
             <div className="flex gap-3 pt-2">
-              <Button onClick={handleSaveIflytek} className="bg-primary hover:bg-primary-600">
-                保存配置
+              <Button onClick={handleSaveIflytek} className="bg-primary hover:bg-primary-600" disabled={iflytekLoading}>
+                {iflytekLoading ? "保存中..." : "保存配置"}
               </Button>
               <Button variant="outline" onClick={handleClearIflytek}>
                 清除配置
               </Button>
             </div>
+            {iflytekStatus && (
+              <div className="text-sm space-y-1">
+                <p className={iflytekStatus.includes("✅") ? "text-green-600" : "text-red-500"}>
+                  配置状态：{iflytekStatus}
+                </p>
+                {iflytekSaveTime && <p className="text-gray-400">{iflytekSaveTime}</p>}
+              </div>
+            )}
           </Card>
         </TabsContent>
 
