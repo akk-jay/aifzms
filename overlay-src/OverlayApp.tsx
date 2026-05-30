@@ -4,196 +4,174 @@ import { AudioCapture } from "../src/lib/audioCapture";
 import { IflytekASR } from "../src/lib/iflytek";
 import { DeepSeekClient } from "../src/lib/deepseek";
 
-function getConfig() {
+// ============ Config Helpers ============
+
+function getFullConfig() {
   let config = {
     iflytek: { appId: "", apiKey: "", apiSecret: "" },
-    deepseek: {
-      apiKey: "sk-placeholder",
-      baseUrl: "https://api.deepseek.com",
-      model: "deepseek-chat",
-      maxTokens: 2000,
-      temperature: 0.7,
-    },
-    interview: { position: "前端", language: "TypeScript" },
+    deepseek: { apiKey: "", baseUrl: "https://api.deepseek.com", model: "deepseek-chat", maxTokens: 2000, temperature: 0.7 },
+    interview: { position: "项目管理", language: "TypeScript" },
   };
   try {
     const raw = localStorage.getItem("app_config");
     if (raw) config = { ...config, ...JSON.parse(raw) };
   } catch { /* ignore */ }
-  // Load interview context (resume + QA library)
-  try {
-    const ctxRaw = localStorage.getItem("interview_context_full");
-    if (ctxRaw) {
-      const ctx = JSON.parse(ctxRaw);
-      (config as Record<string, unknown>).interviewContext = ctx;
-    }
-  } catch { /* ignore */ }
   return config;
 }
 
-function buildInterviewPrompt(): string {
-  let extraContext = "";
+function buildInterviewContext(): string {
+  let ctx = "";
   try {
-    const ctxRaw = localStorage.getItem("interview_context_full");
-    if (ctxRaw) {
-      const ctx = JSON.parse(ctxRaw);
-      if (ctx.resumeName) {
-        extraContext += `\n应聘者已上传简历：${ctx.resumeName}`;
-      }
-      if (ctx.qaItems && ctx.qaItems.length > 0) {
-        extraContext += `\n自定义问答库（${ctx.qaCount}条）：`;
-        ctx.qaItems.forEach((qa: { question: string; answer: string }) => {
-          extraContext += `\n- Q: ${qa.question}\n  A: ${qa.answer}`;
-        });
-      }
+    const raw = localStorage.getItem("interview_context_full");
+    if (!raw) return ctx;
+    const data = JSON.parse(raw);
+    if (data.resumeName) ctx += `\n应聘者简历：${data.resumeName}`;
+    if (data.qaItems?.length > 0) {
+      ctx += `\n自定义问答库（${data.qaCount}条）：`;
+      data.qaItems.forEach((qa: { question: string; answer: string }) => {
+        ctx += `\n- Q: ${qa.question}\n  A: ${qa.answer}`;
+      });
     }
   } catch { /* ignore */ }
-  return extraContext;
+  return ctx;
 }
+
+// ============ OverlayApp ============
 
 export default function OverlayApp() {
   const {
-    state,
-    currentQuestion,
-    currentAnswer,
-    partialTranscript,
-    setState,
-    setCurrentQuestion,
-    setCurrentAnswer,
-    setPartialTranscript,
-    addToHistory,
-    resetOverlay,
+    state, currentQuestion, currentAnswer, partialTranscript,
+    setState, setCurrentQuestion, setCurrentAnswer, setPartialTranscript,
+    addToHistory, resetOverlay,
   } = useInterviewStore();
 
-  const audioCaptureRef = useRef<AudioCapture | null>(null);
+  const audioRef = useRef<AudioCapture | null>(null);
   const asrRef = useRef<IflytekASR | null>(null);
-  const fullTranscriptRef = useRef("");
+  const transcriptRef = useRef("");
 
+  // ===== RECORDING =====
   const startRecording = useCallback(async () => {
-    const config = getConfig();
-    const audioCapture = new AudioCapture();
-    const asr = new IflytekASR(config.iflytek);
+    // Set recording state IMMEDIATELY for fast UI response
+    setState("recording");
+    transcriptRef.current = "";
+    setPartialTranscript("正在听取...");
+    setCurrentQuestion("");
+    setCurrentAnswer("");
 
-    fullTranscriptRef.current = "";
+    const config = getFullConfig();
+    const audio = new AudioCapture();
+    const asr = new IflytekASR(config.iflytek);
+    audioRef.current = audio;
+    asrRef.current = asr;
 
     asr.onResult((text, isFinal) => {
       if (isFinal) {
-        fullTranscriptRef.current += text;
-        setPartialTranscript(fullTranscriptRef.current);
-      } else {
-        setPartialTranscript(fullTranscriptRef.current + text);
+        transcriptRef.current += text;
       }
+      setPartialTranscript(transcriptRef.current + text);
     });
 
     asr.onError((err) => {
-      console.error("ASR error:", err);
+      console.error("[Overlay] ASR error:", err);
+      // Don't stop recording on transient errors
     });
 
+    // Start audio capture (mic) and ASR connection in parallel
     try {
-      await asr.connect();
-      await audioCapture.start();
-      audioCapture.onAudioData((buffer) => {
-        asr.sendAudio(buffer);
-      });
-      audioCaptureRef.current = audioCapture;
-      asrRef.current = asr;
-      setState("recording");
+      await Promise.all([audio.start(), asr.connect()]);
+      audio.onAudioData((buf) => asr.sendAudio(buf));
     } catch (err) {
-      console.error("Failed to start recording:", err);
+      console.error("[Overlay] Failed to start:", err);
+      audio.stop();
+      asr.close();
+      audioRef.current = null;
+      asrRef.current = null;
       setState("idle");
     }
-  }, [setState, setPartialTranscript]);
+  }, [setState, setPartialTranscript, setCurrentQuestion, setCurrentAnswer]);
 
+  // ===== STOP & GENERATE =====
   const stopRecordingAndGenerate = useCallback(async () => {
-    audioCaptureRef.current?.stop();
+    // Stop mic and ASR
+    audioRef.current?.stop();
     asrRef.current?.close();
+    audioRef.current = null;
+    asrRef.current = null;
 
-    const question = fullTranscriptRef.current.trim();
+    const question = transcriptRef.current.trim();
     if (!question) {
+      // No speech detected, go back to idle
       setState("idle");
+      setPartialTranscript("");
       return;
     }
 
     setCurrentQuestion(question);
+    setPartialTranscript("");
     setState("generating");
 
-    const config = getConfig();
+    const config = getFullConfig();
     const dsClient = new DeepSeekClient(config.deepseek);
-    const interviewContext = buildInterviewPrompt();
+    const interviewCtx = buildInterviewContext();
+    const prompt = interviewCtx
+      ? `[面试者背景资料]\n${interviewCtx}\n\n[当前问题]\n${question}`
+      : question;
 
     try {
       let answerText = "";
       await dsClient.generateAnswerStream(
-        interviewContext ? `[面试者背景资料]\n${interviewContext}\n\n[当前问题]\n${question}` : question,
+        prompt,
         (token) => {
           answerText += token;
           setCurrentAnswer(answerText);
         },
-        {
-          position: config.interview.position,
-          language: config.interview.language,
-        }
+        { position: config.interview.position, language: config.interview.language }
       );
-
       setCurrentAnswer(answerText);
       setState("displaying");
-
-      addToHistory({
-        question,
-        answer: answerText,
-        timestamp: new Date().toISOString(),
-      });
+      addToHistory({ question, answer: answerText, timestamp: new Date().toISOString() });
     } catch (err) {
-      console.error("Failed to generate answer:", err);
-      setCurrentAnswer("生成回答失败，请检查 DeepSeek API 配置");
+      console.error("[Overlay] Generate failed:", err);
+      setCurrentAnswer("生成失败，请检查 DeepSeek 配置");
       setState("displaying");
     }
-  }, [setState, setCurrentQuestion, setCurrentAnswer, addToHistory]);
+  }, [setState, setCurrentQuestion, setCurrentAnswer, setPartialTranscript, addToHistory]);
 
+  // ===== NEXT ROUND =====
   const nextRound = useCallback(() => {
     resetOverlay();
     startRecording();
   }, [resetOverlay, startRecording]);
 
-  // Space key handler
+  // ===== Space key handler =====
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         e.preventDefault();
-        switch (state) {
-          case "idle":
-            startRecording();
-            break;
-          case "recording":
-            stopRecordingAndGenerate();
-            break;
-          case "displaying":
-            nextRound();
-            break;
-          case "generating":
-            break;
-        }
+        e.stopPropagation();
+        if (state === "idle") startRecording();
+        else if (state === "recording") stopRecordingAndGenerate();
+        else if (state === "displaying") nextRound();
+        // generating: do nothing
       }
     };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [state, startRecording, stopRecordingAndGenerate, nextRound]);
 
-  // Sync to localStorage for record window
+  // ===== Sync to localStorage for record window =====
   useEffect(() => {
     const unsub = useInterviewStore.subscribe((s) => {
       localStorage.setItem("interview_history", JSON.stringify(s.qaHistory));
       localStorage.setItem("interview_state", JSON.stringify({
-        state: s.state,
-        currentQuestion: s.currentQuestion,
-        currentAnswer: s.currentAnswer,
-        partialTranscript: s.partialTranscript,
+        state: s.state, currentQuestion: s.currentQuestion,
+        currentAnswer: s.currentAnswer, partialTranscript: s.partialTranscript,
       }));
     });
     return () => unsub();
   }, []);
 
+  // ===== UI =====
   return (
     <div className="h-screen w-screen bg-black/70 text-white flex flex-col p-4 select-none" data-tauri-drag-region>
       {/* Status bar */}
@@ -202,12 +180,13 @@ export default function OverlayApp() {
           {state === "idle" && "⏸️ 等待中 | 空格开始"}
           {state === "recording" && "🎙️ 录音中 | 空格停止"}
           {state === "generating" && "🤖 AI 生成中..."}
-          {state === "displaying" && "📋 空格开始下一轮"}
+          {state === "displaying" && "📋 空格下一轮"}
         </span>
       </div>
 
-      {/* Content area */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto space-y-3">
+        {/* Question */}
         {(state === "recording" || state === "generating" || state === "displaying") && (
           <div className="bg-white/10 rounded-xl p-3 border-l-2 border-blue-400">
             <p className="text-xs text-blue-300 mb-1">面试官问题：</p>
@@ -217,11 +196,12 @@ export default function OverlayApp() {
                 <span className="animate-pulse text-blue-400"> ▍</span>
               </p>
             ) : (
-              <p className="text-sm text-white">{currentQuestion}</p>
+              <p className="text-sm text-white">{currentQuestion || "(未检测到语音)"}</p>
             )}
           </div>
         )}
 
+        {/* Answer */}
         {(state === "generating" || state === "displaying") && (
           <div className="bg-white/10 rounded-xl p-3 border-l-2 border-green-400">
             <p className="text-xs text-green-300 mb-1">AI 回答：</p>
