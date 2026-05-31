@@ -12,6 +12,11 @@ export default function Sidebar() {
   return (
     <aside className="w-56 min-h-screen bg-white border-r border-gray-100 flex flex-col shrink-0">
       <div className="px-6 py-6">
+        <img
+          src="/logo.jpg"
+          alt="AI 面试助手"
+          className="h-10 w-auto mb-3"
+        />
         <h1 className="text-lg font-bold text-primary">AI 面试助手</h1>
         <p className="text-xs text-gray-400 mt-1">本地桌面版</p>
       </div>
